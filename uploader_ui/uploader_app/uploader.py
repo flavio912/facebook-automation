@@ -6,8 +6,7 @@ from typing import List, Optional, Generator, Tuple
 
 from facebook_business import FacebookSession, FacebookAdsApi
 from facebook_business.adobjects.advideo import AdVideo
-from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.api import FacebookResponse, Cursor
+from facebook_business.api import FacebookResponse
 from facebook_business.exceptions import FacebookRequestError
 
 VIDEO_STATUS_READY = 'ready'
@@ -70,7 +69,6 @@ class FacebookUploaderNoWait(UploaderBase):
     def __init__(self, api: FacebookAdsApi, act_id: str):
         self._api = api
         self._act_id = act_id
-        self._act = AdAccount(act_id, None, api)
         self._index = {}  # hash map of existing videos
         self._index_ids = {}  # hash map of existing videos
         self._uploaded_videos = {}
@@ -90,8 +88,6 @@ class FacebookUploaderNoWait(UploaderBase):
                              resp['title'] if 'title' in resp else None,
                              resp['status']['video_status'] if 'status' in resp and 'video_status' in resp['status'] else None
                              )
-    def _resp_to_video2(self, v: AdVideo) -> UploadedVideo:
-        return self._resp_to_video(v._data)
 
     def _get_exception_description(self, e: FacebookRequestError):
         if e.body() is not None and 'error' in e.body() and 'message' in e.body()['error']:
@@ -108,14 +104,22 @@ class FacebookUploaderNoWait(UploaderBase):
         raise Exception(err)
 
     def index(self):
-        limit = int(os.getenv('FB_AD_PAGE_SIZE','100'))
-        logging.info(f'starting indexing for account={self._act_id} with limit={limit}')
         try:
-            c = Cursor(self._act, AdVideo, fields=[AdVideo.Field.title,AdVideo.Field.status], params={"limit":limit})
-            self._index_videos(list(map(self._resp_to_video2, c)))
-            logging.info(f'Indexed {len(self._index_ids)} videos for account {self._act_id}')
+            r = self._api.call("GET", (self._act_id, 'advideos'), {
+                "fields": "status,title"
+            })
+            while True:
+                if r.is_failure():
+                    raise Exception(f"facebook request failed: _index_catalog")
+                resp = r.json()
+                if len(resp['data']) == 0:
+                    break
+                self._index_videos(list(map(self._resp_to_video, resp['data'])))
+                if 'paging' in resp and 'cursors' in resp['paging'] and 'after' in resp['paging']['cursors']:
+                    r = self._api.call("GET", (self._act_id, 'advideos'), {'after': resp['paging']['cursors']['after']})
+                else:
+                    break
         except FacebookRequestError as e:
-            logging.warn(f'Failed indexing account {self._act_id}. Error={e}')
             self._decode_request_error(e)
 
     def should_be_uploaded(self, video_name: str) -> bool:
@@ -137,43 +141,57 @@ class FacebookUploaderNoWait(UploaderBase):
             return True
         elif r.status() == HTTPStatus.NOT_FOUND:
             return False
-        logging.warning(r.json())
+        logging.getLogger('fb-upl').warning(r.json())
         return False
 
     def reload(self, video: UploadedVideo):
-            r = self._api.call("GET", (video.id, ), {
-                "fields": "status,title"
-            })
-            if r.status() == HTTPStatus.NOT_FOUND:
-                if video.name in self._index:
-                    self._delete_from_index(video)
-                return
-            if r.is_success():
-                self._index_videos([self._resp_to_video(r.json())])
-                return
-            logging.warning(r.json())
+        while True:
+            try:
+                r = self._api.call("GET", (video.id, ), {
+                    "fields": "status,title"
+                })
+                if r.status() == HTTPStatus.NOT_FOUND:
+                    if video.name in self._index:
+                        self._delete_from_index(video)
+                    return
+                if r.is_success():
+                    self._index_videos([self._resp_to_video(r.json())])
+                    return
+                logging.getLogger('fb-upl').warning(r.json())
+            except FacebookRequestError as e:
+                if self._is_too_many_calls_exception(e):
+                    logging.getLogger('fb-upl').warning("too many calls, going sleep for 10 mins")
+                    time.sleep(10*60)
+                else:
+                    raise e
 
     def upload(self, path: str) -> Optional[UploadedVideo]:
         video = AdVideo(api=self._api)
         video._parent_id=self._act_id
         video[AdVideo.Field.filepath] = path
-        res = video.remote_create()
-        if res is not None and isinstance(res, dict) and 'id' in res:
-            id = res['id']
-            logging.info(f'Video created: id={id} res={res}')
-            upl = UploadedVideo(id=res['id'])
-            self._uploaded_videos[upl.id] = upl
-            return upl
-        else:
-            raise Exception('unable to upload video')
+        try:
+            res = video.remote_create()
+            if res is not None and isinstance(res, dict) and 'id' in res:
+                upl = UploadedVideo(id=res['id'])
+                self._uploaded_videos[upl.id] = upl
+                return upl
+            else:
+                raise Exception('unnable to upload video')
+        except FacebookRequestError as e:
+            if self._is_too_many_calls_exception(e):
+                logging.getLogger('fb-upl').warning("too many calls, going sleep for 10 mins")
+                time.sleep(10 * 60)
+            else:
+                logging.getLogger('fb-upl').warning(self._get_exception_description(e))
+        except Exception as e:
+            logging.getLogger('fb-upl').warning(str(e))
+        return None
 
     def set_uploaded_videos(self, files: List[UploadedVideo]):
         self._uploaded_videos = dict(zip(map(lambda x: x.id, files), files))
 
     def wait_all(self) -> Generator[Tuple[str,str], None, None]:
-        sleepTime = 30
-        retries = 10
-        for i in range(0,retries):
+        while True:
             to_delete = []
             for id in self._uploaded_videos:
                 video = self._uploaded_videos[id]
@@ -187,5 +205,4 @@ class FacebookUploaderNoWait(UploaderBase):
                 del self._uploaded_videos[id]
             if len(self._uploaded_videos) == 0:
                 break
-            logging.info(f'The are {len(self._uploaded_videos)} with not ready status. Going to sleep for {sleepTime} seconds. Try {i} of {retries}')
-            time.sleep(sleepTime)
+            time.sleep(1)

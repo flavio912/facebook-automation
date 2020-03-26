@@ -1,6 +1,4 @@
 import os
-import logging
-import re
 from abc import ABCMeta
 from typing import Generator
 
@@ -39,12 +37,6 @@ class DropBoxFile(FileInfoBase):
     def name(self) -> str:
         return self.filename
 
-job_pattern = re.compile(r"j(?P<job>\d+)_", re.I)
-def get_job_id(name):
-    m = job_pattern.search(name)
-    if m is None:
-        return None
-    return int(m['job'])
 
 class DropBoxSource(SourceBase):
     def __init__(self, access_token: str, start_folder: str):
@@ -62,40 +54,16 @@ class DropBoxSource(SourceBase):
                     raise Exception(f"Dropbox folder error: {str(e.error.get_path())}")
         raise Exception(f"Dropbox error. No description provided: {str(e)}")
 
-    def list_folders(self, path, recursive):
-        entries = []
-        r = self._dbx.files_list_folder(path, recursive=recursive, include_deleted=False, include_mounted_folders=False)
-        entries.extend(r.entries)
-        while r.has_more:
-            r = self._dbx.files_list_folder_continue(r.cursor)
-            entries.extend(r.entries)
-        return entries
-
-    def get_job_folders(self):
-        job_min = int(os.getenv('JOB_MIN','1'))
-        job_max = int(os.getenv('JOB_MAX','1000'))
-        logging.info(f'Listing job folders between {job_min} and {job_max}')
-        all_files = self.list_folders(self._start_folder, False)
-        logging.info(f'Identified {len(all_files)} level 1 files and folders')
-        folders = []
-        for f in all_files:
-            job = get_job_id(f.name)
-            if job is not None and (job>=job_min) and (job<job_max):
-                folders.append(f)
-        logging.info(f'Identified {len(folders)} between {job_min} and {job_max}')
-        return folders
-
     def get_files(self) -> Generator[FileInfoBase, None, None]:
         try:
-            for f in self.get_job_folders():
-                logging.debug(f'Enumerating files in {f.path_display}')
-                r = self._dbx.files_list_folder(f.path_display, recursive=True)
+            r = self._dbx.files_list_folder(self._start_folder, recursive=True)
+            cursor = r.cursor
+            for e in r.entries:
+                yield DropBoxFile(e.name, e.path_display)
+            while r.has_more:
+                r = self._dbx.files_list_folder_continue(cursor)
                 for e in r.entries:
                     yield DropBoxFile(e.name, e.path_display)
-                while r.has_more:
-                    r = self._dbx.files_list_folder_continue(r.cursor)
-                    for e in r.entries:
-                        yield DropBoxFile(e.name, e.path_display)
         except dropbox.ApiError as e:
             raise self._decode_exception(e)
 
