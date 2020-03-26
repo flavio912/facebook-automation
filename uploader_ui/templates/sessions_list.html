@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dropbox -> Facebook Uploader</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+</head>
+<body>
+    <div class="container">
+        <h3>Sessions list</h3>
+        <table class="table">
+            <tr>
+                <th>ID</th>
+                <th>Created At</th>
+                <th>Last Modified At</th>
+                <th>Status</th>
+                <th>Session error</th>
+                <th>Videos Count</th>
+            </tr>
+            {% for session in sessions %}
+                <tr>
+                    <td><a href="/session/{{ session.id }}">{{ session.id }}</a></td>
+                    <td><a href="/session/{{ session.id }}">{{ session.created_at }}</a></td>
+                    <td>{{ session.last_modified_at }}</td>
+                    <td>{{ session.status }}</td>
+                    <td>{{ session.session_error }}</td>
+                    <td>{{ session.videos_count }}</td>
+                </tr>
+            {% endfor %}
+        </table>
+    </div>
+</body>
+</html>

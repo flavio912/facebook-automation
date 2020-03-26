@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>View session {{ session.id }} | Dropbox -> Facebook Uploader</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+</head>
+<body>
+    <div>
+        <a href="/">Home</a>
+        <h3>Session info</h3>
+        <div>
+            ID: {{ session.id }} <br/>
+            Created At: {{ session.created_at }} <br/>
+            Last modified At: {{ session.last_modified_at }} <br/>
+            Status: {{ session.status }} <br/>
+            Session error: {{ session.session_error }} <br/>
+            Videos count: {{ videos_len }} <br/>
+        </div>
+        <div>
+            {% if videos_len > 0 %}
+                <table class="table">
+                    <tr>
+                        <th>PK</th>
+                        <th>Created At</th>
+                        <th>Original Path</th>
+                        <th>File Id</th>
+                        <th>Status</th>
+                        <th>Name</th>
+                    </tr>
+                    {% for video in videos %}
+                    <tr>
+                        <td>{{ video.pk }}</td>
+                        <td>{{ video.created_at }}</td>
+                        <td>{{ video.original_path }}</td>
+                        <td>{{ video.file_id }}</td>
+                        <td>{{ video.status }}</td>
+                        <td>{{ video.name }}</td>
+                    </tr>
+                    {% endfor %}
+                </table>
+            {% else %}
+                No videos were uploaded
+            {% endif %}
+        </div>
+
+
+
+    </div>
+</body>
+</html>
