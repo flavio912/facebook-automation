@@ -65,8 +65,23 @@ class Uploader:
         if is_matched and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
-            self._source.download_file(file, new_file)
+
+            # Todo. if the new_file is already exist, it's not need to download again.
+            # <<
+            # input: new_file
+            # output: check it's existence.
+            # >>
+            # self._source.download_file(file, new_file)
             logging.info(f"Successful download, uploading: {file.name}")
+
+            uploaded = self._uploader.upload_to_campaign(file.name, file.path, file.job_number)
+            if uploaded is True:
+                logging.info(f"Successful upload to Campaign: {file.name}")
+            else:
+                logging.warning(f"Upload to Campaign failed: {file.name}")
+                return None, file
+
+            uploaded = None;
             uploaded = self._uploader.upload(new_file)
             if uploaded is not None:
                 self._storage.create_video(session_id, uploaded.id, file.name, file.path)

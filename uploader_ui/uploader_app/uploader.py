@@ -9,6 +9,7 @@ from facebook_business.adobjects.advideo import AdVideo
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.api import FacebookResponse, Cursor
 from facebook_business.exceptions import FacebookRequestError
+from facebook_business.adobjects.campaign import Campaign
 
 VIDEO_STATUS_READY = 'ready'
 
@@ -37,11 +38,24 @@ class UploaderBase:
     def get_by_name(self, video_name: str) -> Optional[UploadedVideo]:
         raise NotImplementedError
 
+    def get_campaign_by_name(self, campaigns, name: str) -> bool:
+        raise NotImplementedError
+
     def upload(self, path: str) -> Optional[UploadedVideo]:
         """
         Upload file by given path and return UploadedVideo
         :param path:
         :raise Exception if upload failed
+        :return:
+        """
+        raise NotImplementedError
+
+    def upload_to_campaign(self, path: str, name: str, job_num) -> bool:
+        """
+        Upload file by given path to Facebook Campaign and return True when succeed
+        :param path:
+        :param name:
+        :param job_num:
         :return:
         """
         raise NotImplementedError
@@ -131,6 +145,12 @@ class FacebookUploaderNoWait(UploaderBase):
             return self._index[video_name]
         return None
 
+    def get_campaign_by_name(self, campaigns, name: str):
+        for campaign in campaigns:
+            if campaign["name"] == name:
+                return True
+        return False
+
     def delete_video(self, video: UploadedVideo) -> bool:
         r = self._api.call("DELETE", (video.id,))
         if r.is_success():
@@ -152,6 +172,46 @@ class FacebookUploaderNoWait(UploaderBase):
                 self._index_videos([self._resp_to_video(r.json())])
                 return
             logging.warning(r.json())
+
+    def upload_to_campaign(self, path: str, name: str, job_num) -> bool:
+        video = AdVideo(api=self._api)
+        video._parent_id = self._act_id
+        video[AdVideo.Field.filepath] = path
+        campaign_name = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', 'US-AND-MAI-ABO-J')
+        campaigns = self._act.get_campaigns(fields=[Campaign.Field.name, Campaign.Field.id])
+        logging.info(f'Checking Campaign Exist: "{campaign_name}"')
+        if self.get_campaign_by_name(campaigns, campaign_name):
+            logging.info(f'Campaign is already exist: "{campaign_name}"')
+        else:
+            logging.info(f'Creating Campaign: "{campaign_name}"')
+            params = {
+                'name': campaign_name,
+                'objective': 'POST_ENGAGEMENT',
+                'special_ad_category' : 'NONE',
+                'status': 'ACTIVE',
+            }
+            campaign_result = self._act.create_campaign(params=params)
+            logging.info(campaign_result)
+
+        # Todo. To Create Set of Campaign
+        
+        # Todo. To Create AD to Set
+
+
+        # logging.info(f'Current Compaigns: {campaigns}');
+        return False
+        # video = AdVideo(api=self._api)
+        # video._parent_id=self._act_id
+        # video[AdVideo.Field.filepath] = path
+        # res = video.remote_create()
+        # if res is not None and isinstance(res, dict) and 'id' in res:
+        #     id = res['id']
+        #     logging.info(f'Video created: id={id} res={res}')
+        #     upl = UploadedVideo(id=res['id'])
+        #     self._uploaded_videos[upl.id] = upl
+        #     return upl
+        # else:
+        #     raise Exception('unable to upload video')
 
     def upload(self, path: str) -> Optional[UploadedVideo]:
         video = AdVideo(api=self._api)
