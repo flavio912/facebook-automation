@@ -18,6 +18,9 @@ from .pattern import is_file_match
 from .source import SourceBase, FileInfoBase
 from .storage import StorageBase
 from .uploader import UploaderBase, TooManyCallsError
+import re
+import json
+
 
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -70,7 +73,7 @@ class Uploader:
     def _handle_file(self, session_id: id, file: FileInfoBase):
         logging.debug(f"_handle_file session_id:{session_id} file.name={file.name} file.path={file.path}")
         is_matched = is_file_match(file.name)
-        if is_matched and self._uploader.should_be_uploaded(file.name):
+        if is_matched:#and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
 
@@ -111,6 +114,193 @@ class Uploader:
         return True
 
     def run(self):
+        # Test Code <<
+        FacebookAdsApi.init(os.environ['FB_GA_APPID'], os.environ['FB_GA_APPKEY'], os.environ['FB_GA_TOKEN'])
+        account = AdAccount('act_659750741197329')
+
+        campaigns = account.get_campaigns(fields=[
+            Campaign.Field.name,
+            Campaign.Field.id
+        ])
+
+        campaign = None
+        for r in campaigns:
+            if r['name'] == 'US-AND-MAI-ABO-J606_MagicSink': #'US-AND-MAI-ABO-J': #
+                campaign = r
+
+        print(campaign)
+
+        adgroups = campaign.get_ad_sets(fields=[
+            AdSet.Field.name,
+            AdSet.Field.id
+        ])
+
+        param_types = {
+            'deep_copy': True,
+            'rename_options': 'Object',
+            'status_option': 'ACTIVE',
+        }
+        # campaign.create_copy()
+        for r in adgroups:
+            if r['name'] == 'Creative-Theme=2_Template=T7-4_Job=606_Version-Opener=1_Copy=1_Creator=7_Gender=none_Age=0_Demo=9':    #'Test':
+                ad_set = r
+
+        print(ad_set)
+        ads = ad_set.get_ads(fields=[
+            Ad.Field.name,
+            Ad.Field.configured_status,
+            Ad.Field.creative,
+        ])
+        print(ads)
+
+        ad = ads[0]
+        params = {
+            "adset_id": ad_set['id'],
+            "status_option": 'ACTIVE',
+            "rename_options": {
+                "rename_strategy" : "DEEP_RENAME",
+                #"rename_prefix" : "",
+                #"rename_suffix" : ""
+            }
+        }
+        ad.create_copy(params=params)
+
+        session = FacebookSession(
+            os.environ['FB_GA_APPID'],
+            os.environ['FB_GA_APPKEY'],
+            os.environ['FB_GA_TOKEN'],
+        )
+        _api = FacebookAdsApi(session)
+
+        video = AdVideo(api=_api)
+        video._parent_id = "act_659750741197329"
+        video[AdVideo.Field.filepath] = "C:\\GA_TEMP_DIR\\test.mp4"
+
+        #res = video.remote_create()
+        video_id_for_creative = video.get_id()
+        print(video)
+        print(video_id_for_creative)
+
+        fields = [
+            AdCreative.Field.account_id,
+            AdCreative.Field.actor_id,
+            AdCreative.Field.adlabels,
+            AdCreative.Field.applink_treatment,
+            AdCreative.Field.asset_feed_spec,
+            AdCreative.Field.authorization_category,
+            AdCreative.Field.auto_update,
+            AdCreative.Field.body,
+            AdCreative.Field.branded_content_sponsor_page_id,
+            AdCreative.Field.bundle_folder_id,
+            AdCreative.Field.call_to_action_type,
+            AdCreative.Field.categorization_criteria,
+            AdCreative.Field.category_media_source,
+            AdCreative.Field.destination_set_id,
+            AdCreative.Field.dynamic_ad_voice,
+            AdCreative.Field.effective_authorization_category,
+            AdCreative.Field.effective_instagram_media_id,
+            AdCreative.Field.effective_instagram_story_id,
+            AdCreative.Field.effective_object_story_id,
+            # AdCreative.Field.enable_direct_install,
+            # AdCreative.Field.enable_launch_instant_app,
+            AdCreative.Field.id,
+            AdCreative.Field.image_crops,
+            AdCreative.Field.image_hash,
+            AdCreative.Field.image_url,
+            AdCreative.Field.instagram_actor_id,
+            AdCreative.Field.instagram_permalink_url,
+            AdCreative.Field.instagram_story_id,
+            AdCreative.Field.interactive_components_spec,
+            AdCreative.Field.link_deep_link_url,
+            AdCreative.Field.link_destination_display_url,
+            AdCreative.Field.link_og_id,
+            AdCreative.Field.link_url,
+            AdCreative.Field.messenger_sponsored_message,
+            AdCreative.Field.name,
+            AdCreative.Field.object_id,
+            AdCreative.Field.object_store_url,
+            AdCreative.Field.object_story_id,
+            AdCreative.Field.object_story_spec,
+            AdCreative.Field.object_type,
+            AdCreative.Field.object_url,
+            AdCreative.Field.place_page_set_id,
+            AdCreative.Field.platform_customizations,
+            AdCreative.Field.playable_asset_id,
+            AdCreative.Field.portrait_customizations,
+            AdCreative.Field.product_set_id,
+            AdCreative.Field.recommender_settings,
+            AdCreative.Field.status,
+            AdCreative.Field.template_url,
+            AdCreative.Field.template_url_spec,
+            AdCreative.Field.thumbnail_url,
+            AdCreative.Field.title,
+            AdCreative.Field.url_tags,
+
+            # AdCreative.Field.use_page_actor_override,
+            # AdCreative.Field.video_id,
+            # AdCreative.Field.call_to_action,
+            # AdCreative.Field.image_file,
+            # AdCreative.Field.is_dco_internal
+        ]
+
+        adcreatives = account.get_ad_creatives(fields=fields)
+        for c in adcreatives:
+            if c['id'] == '23844416112710002':
+                adcreative = c
+        print(adcreative)
+
+        #adcreative = AdCreative('23844416112710002')
+        #exist_params = adcreative.remote_read()
+        #exist_params = adcreative.remote_read(fields=fields)
+
+
+        params = {
+            "account_id": "659750741197329",
+            "actor_id": "628994917168628",
+            "instagram_actor_id": "677652652254752",
+            "instagram_permalink_url": "https://www.instagram.com/p/B-Pug4wANTH/",
+
+            "name": "ENTER CREATIVE NAME HERE",
+            "video_id": video_id_for_creative,
+            "object_type": 'SPONSORED_VIDEO',
+            "body": "\"I play every morning. <3 <3 <3 this app!\" - Parker C.",
+            "effective_authorization_category": "NONE",
+            "effective_instagram_media_id": "17877400444568435",
+            "effective_instagram_story_id": "2676891812440276",
+            "effective_object_story_id": "628994917168628_2778221908912574",
+            "object_story_spec": {
+                "instagram_actor_id": "677652652254752",
+                "page_id": "628994917168628",
+                "link_data": {
+                    'link': 'http://play.google.com/store/apps/details?id=com.luckyday.app',
+                    'message': 'ENTER AD MESSAGE HERE',
+                    "call_to_action": {
+                        "type": "PLAY_GAME",
+                        "value": {
+                            "link": "http://play.google.com/store/apps/details?id=com.luckyday.app"
+                        }
+                    }
+                }
+            }
+        }
+
+        // Duplicate
+        adcreative = account.create_ad_creative(params=params)
+        print(adcreative)
+
+        params = {
+            Ad.Field.name: 'ENTER AD NAME HERE',
+            Ad.Field.campaign_id: campaign['id'],
+            Ad.Field.adset_id: ad_set['id'],
+            Ad.Field.creative: {'creative_id': adcreative['id']}, #'23844416112710002'}, #23844416105030002
+            Ad.Field.status: 'ACTIVE'}
+
+        finish = account.create_ad(params=params)
+        print(finish)
+        print("Finished")
+        return
+        # >>
+
         logging.info("Indexing uploader...")
         if not self._do_index():
             logging.warning("index unsuccessful")
