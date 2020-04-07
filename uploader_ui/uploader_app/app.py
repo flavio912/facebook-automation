@@ -2,17 +2,9 @@ import logging
 import os
 import time
 
-# from facebook_business import FacebookAdsApi
+from facebook_business import FacebookAdsApi
 from facebook_business.adobjects.abstractcrudobject import AbstractCrudObject
 from facebook_business.exceptions import FacebookBadObjectError, FacebookRequestError
-from facebook_business.adobjects.adset import AdSet
-from facebook_business.adobjects.targeting import Targeting
-from facebook_business.adobjects.adaccount import AdAccount
-from facebook_business.adobjects.ad import Ad
-from facebook_business.adobjects.adcreative import AdCreative
-from facebook_business.adobjects.advideo import AdVideo
-from facebook_business.adobjects.campaign import Campaign
-from facebook_business import FacebookSession, FacebookAdsApi
 
 from .pattern import is_file_match
 from .source import SourceBase, FileInfoBase
@@ -73,35 +65,17 @@ class Uploader:
         if is_matched and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
-
-            # Todo. if the new_file is already exist, it's not need to download again.
-            # <<
-            # input: new_file
-            # output: check it's existence.
-            # >>
             self._source.download_file(file, new_file)
             logging.info(f"Successful download, uploading: {file.name}")
-
-            uploaded = self._uploader.upload_to_campaign(file.name, file.path, file.job_number, new_file)
+            uploaded = self._uploader.upload(new_file)
             if uploaded is not None:
-                #self._storage.create_video(session_id, uploaded.id, file.name, file.path)
-                logging.info(f"Successful upload to Campaign: {file.name}")
+                self._storage.create_video(session_id, uploaded.id, file.name, file.path)
+                logging.info(f"Successful upload: {file.name}")
                 return uploaded, None
             else:
-                #self._storage.create_video(session_id, uploaded.id, file.name, file.path, "error")
-                logging.warning(f"Upload to Campaign failed: {file.name}")
+                self._storage.create_video(session_id, uploaded.id, file.name, file.path, "error")
+                logging.warning(f"Upload failed: {file.name}")
                 return None, file
-
-            # uploaded = None;
-            # uploaded = self._uploader.upload(new_file)
-            # if uploaded is not None:
-            #     self._storage.create_video(session_id, uploaded.id, file.name, file.path)
-            #     logging.info(f"Successful upload: {file.name}")
-            #     return uploaded, None
-            # else:
-            #     self._storage.create_video(session_id, uploaded.id, file.name, file.path, "error")
-            #     logging.warning(f"Upload failed: {file.name}")
-            #     return None, file
         else:
             logging.info(f"Skip: {file.name}")
             return None, None
@@ -122,7 +96,6 @@ class Uploader:
         logging.info(f'Using {parallelism} threads to upload files')
         pool = ThreadPool(parallelism)
         try:
-
             total_uploaded = []
             logging.info(f'Enumerating files in {self._source._start_folder}')
             all_files = list(self._source.get_files())

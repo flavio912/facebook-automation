@@ -4,17 +4,11 @@ import time
 from http import HTTPStatus
 from typing import List, Optional, Generator, Tuple
 
-# from facebook_business import FacebookSession, FacebookAdsApi
+from facebook_business import FacebookSession, FacebookAdsApi
 from facebook_business.adobjects.advideo import AdVideo
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.api import FacebookResponse, Cursor
 from facebook_business.exceptions import FacebookRequestError
-from facebook_business.adobjects.campaign import Campaign
-from facebook_business.adobjects.adset import AdSet
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.targeting import Targeting
-from facebook_business.adobjects.adcreative import AdCreative
-from facebook_business.adobjects.ad import Ad
 
 VIDEO_STATUS_READY = 'ready'
 
@@ -43,30 +37,11 @@ class UploaderBase:
     def get_by_name(self, video_name: str) -> Optional[UploadedVideo]:
         raise NotImplementedError
 
-    def get_campaign_by_name(self, campaigns, name: str):
-        raise NotImplementedError
-
-    def get_adset_by_name(self, ads, name: str):
-        raise NotImplementedError
-
-    def get_adset_name_from_path(self, name:str, path:str):
-        raise NotImplementedError
-
     def upload(self, path: str) -> Optional[UploadedVideo]:
         """
         Upload file by given path and return UploadedVideo
         :param path:
         :raise Exception if upload failed
-        :return:
-        """
-        raise NotImplementedError
-
-    def upload_to_campaign(self, path: str, name: str, job_num, new_path) -> Optional[UploadedVideo]:
-        """
-        Upload file by given path to Facebook Campaign and return True when succeed
-        :param path:
-        :param name:
-        :param job_num:
         :return:
         """
         raise NotImplementedError
@@ -156,25 +131,6 @@ class FacebookUploaderNoWait(UploaderBase):
             return self._index[video_name]
         return None
 
-    def get_campaign_by_name(self, campaigns, name: str):
-        for campaign in campaigns:
-            if campaign["name"] == name:
-                return campaign
-        return None
-
-    def get_adset_by_name(selfself, ads, name: str):
-        for ad in ads:
-            if ad['name'] == name:
-                return ad
-        return None
-
-    def get_adset_name_from_path(self, name:str, path:str):
-        file_path = path.replace('/' + name, "")
-        file_path = file_path[file_path.rfind('/') + 1:]
-        file_path = file_path[file_path.find('_') + 1:]
-        return file_path
-        #return file_path[file_path.rfind('/') + 1:]
-
     def delete_video(self, video: UploadedVideo) -> bool:
         r = self._api.call("DELETE", (video.id,))
         if r.is_success():
@@ -196,114 +152,6 @@ class FacebookUploaderNoWait(UploaderBase):
                 self._index_videos([self._resp_to_video(r.json())])
                 return
             logging.warning(r.json())
-
-    def upload_to_campaign(self, name: str, path: str, job_num, new_path) -> Optional[UploadedVideo]:
-        # To Create Campaign(or check exist)
-        campaign_name = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', 'US-AND-MAI-ABO-J') + str(job_num)
-        #campaign_name = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', 'US-AND-MAI-ABO-J') # For Test
-        campaigns = self._act.get_campaigns(fields=[
-            Campaign.Field.name,
-            Campaign.Field.id
-        ])
-        logging.info(f'Checking Campaign Exist: "{campaign_name}"')
-        campaign = self.get_campaign_by_name(campaigns, campaign_name)
-        if campaign is not None:
-            logging.info(f'Campaign is already exist: "{campaign_name}"')
-        else:
-            logging.info(f'Creating Campaign: "{campaign_name}"')
-            params = {
-                Campaign.Field.name: campaign_name,
-                Campaign.Field.objective: 'POST_ENGAGEMENT',
-                Campaign.Field.special_ad_category : 'NONE',
-                Campaign.Field.status: 'ACTIVE',
-            }
-            campaign = self._act.create_campaign(params=params)
-            if campaign is not None: # Need to Check
-                logging.info(f'Campaign creation success: "{campaign_name}"')
-            else:
-                raise Exception('unable to create campaign')
-
-        # To Create AdSet on Campaign(or check exist)
-        ad_name = self.get_adset_name_from_path(name, path)
-        logging.info(f'Checking AdSet Exist: "{campaign_name}"/"{ad_name}"')
-        adgroups = campaign.get_ad_sets(fields=[
-            AdSet.Field.name,
-            AdSet.Field.id
-        ])
-        ad_set = self.get_adset_by_name(adgroups, ad_name)
-        if ad_set is not None:
-            logging.info(f'AdSet is already exist: "{campaign_name}"/"{ad_name}"')
-        else:
-            logging.info(f'Creating AdSet: "{campaign_name}"/"{ad_name}"')
-            # self._api.init(os.environ['FB_GA_APPID'], os.environ['FB_GA_APPKEY'], os.environ['FB_GA_TOKEN'])
-            FacebookAdsApi.init(os.environ['FB_GA_APPID'], os.environ['FB_GA_APPKEY'], os.environ['FB_GA_TOKEN'])
-            ad_set = AdSet(parent_id=self._act_id)
-            ad_set.update({
-                AdSet.Field.name: ad_name,
-                AdSet.Field.campaign_id: campaign["id"],
-                AdSet.Field.daily_budget: 1000,
-                AdSet.Field.billing_event: AdSet.BillingEvent.impressions,
-                AdSet.Field.optimization_goal: AdSet.OptimizationGoal.reach,
-                AdSet.Field.bid_amount: 2,
-                AdSet.Field.targeting: {
-                    Targeting.Field.geo_locations: {
-                        'countries': ['US'],
-                    },
-                },
-            })
-            ad_set.remote_create(params={'status': 'ACTIVE'})
-            if ad_set is not None: # Need to Check
-                logging.info(f'AdSet creation success: "{campaign_name}"/"{ad_name}"')
-            else:
-                raise Exception('unable to create AdSet')
-
-        # To upload video file to AdSet
-        logging.info(f'Uploading video file:"{new_path}"')
-        video = AdVideo(api=self._api)
-        video._parent_id = self._act_id
-        video[AdVideo.Field.filepath] = new_path
-        res = video.remote_create()
-        video_id_for_creative = video.get_id()
-        logging.info(f'Video is created(id):"{video_id_for_creative}"')
-
-        page_id = os.environ.get('PAGE_ID', '100255224975062')  # Todo. Need to check
-        params = {
-            AdCreative.Field.name: 'cractive_' + name,
-            AdCreative.Field.video_id: video_id_for_creative,
-            AdCreative.Field.object_type: 'SPONSORED_VIDEO',
-            AdCreative.Field.object_story_spec:
-            {
-                'page_id': page_id,
-                'link_data':
-                {
-                    # 'image_hash': image_hash,
-                    'link': 'https://ga.luckydayapp.com/',      # Todo. Need to check
-                    'message': ''
-                }
-            }
-        }
-        ad_creative = self._act.create_ad_creative(params=params)
-        logging.info(f'Ad creative(id): ' + ad_creative['id'])
-
-        params = {
-            Ad.Field.name: name,
-            Ad.Field.campaign_id: campaign['id'],
-            Ad.Field.adset_id: ad_set['id'],
-            Ad.Field.creative: {'creative_id': ad_creative['id']},
-            Ad.Field.status: 'ACTIVE'}
-
-        self._act.create_ad(params=params)
-        logging.info(f'Ad creation success: "{campaign_name}"/"{ad_name}"/"{name}"')
-
-        if res is not None and isinstance(res, dict) and 'id' in res:
-            id = res['id']
-            logging.info(f'Video is created: id={id} res={res}')
-            upl = UploadedVideo(id=res['id'])
-            logging.info(f'Video is uploaded: id={id} res={res}')
-            self._uploaded_videos[upl.id] = upl
-            return upl
-        else:
-            raise Exception('unable to upload video')
 
     def upload(self, path: str) -> Optional[UploadedVideo]:
         video = AdVideo(api=self._api)
