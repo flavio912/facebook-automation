@@ -52,6 +52,9 @@ class UploaderBase:
     def get_adset_name_from_path(self, name:str, path:str):
         raise NotImplementedError
 
+    def get_campaign_name_from_path(self, name:str, path:str):
+        raise NotImplementedError
+
     def upload(self, path: str) -> Optional[UploadedVideo]:
         """
         Upload file by given path and return UploadedVideo
@@ -61,7 +64,7 @@ class UploaderBase:
         """
         raise NotImplementedError
 
-    def upload_to_campaign(self, path: str, name: str, job_num, new_path) -> Optional[UploadedVideo]:
+    def upload_with_duplicate(self, path: str, name: str, job_num, new_path) -> Optional[UploadedVideo]:
         """
         Upload file by given path to Facebook Campaign and return True when succeed
         :param path:
@@ -175,6 +178,9 @@ class FacebookUploaderNoWait(UploaderBase):
         return file_path
         #return file_path[file_path.rfind('/') + 1:]
 
+    def get_campaign_name_from_path(self, name:str, path:str):
+        return path[path.rfind('/') + 1:]
+
     def delete_video(self, video: UploadedVideo) -> bool:
         r = self._api.call("DELETE", (video.id,))
         if r.is_success():
@@ -197,65 +203,35 @@ class FacebookUploaderNoWait(UploaderBase):
                 return
             logging.warning(r.json())
 
-    def upload_to_campaign(self, name: str, path: str, job_num, new_path) -> Optional[UploadedVideo]:
-        # To Create Campaign(or check exist)
-        campaign_name = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', 'US-AND-MAI-ABO-J') + str(job_num)
-        #campaign_name = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', 'US-AND-MAI-ABO-J') # For Test
+    def upload_with_duplicate(self, name: str, path: str, job_num, new_path) -> Optional[UploadedVideo]:
+        template = Campaign(os.getenv('AD_CAMPAIGN_TEMPLATE_ID', '23844416049080002'))
+
+        template = template.api_get(fields=[Campaign.Field.name])
+        campaign_name = template[Campaign.Field.name] + str(job_num) + "_" + self.get_adset_name_from_path(name, path)
+
+        logging.info(f'Checking Campaign Exist: "{campaign_name}"')
         campaigns = self._act.get_campaigns(fields=[
             Campaign.Field.name,
             Campaign.Field.id
         ])
-        logging.info(f'Checking Campaign Exist: "{campaign_name}"')
         campaign = self.get_campaign_by_name(campaigns, campaign_name)
         if campaign is not None:
             logging.info(f'Campaign is already exist: "{campaign_name}"')
         else:
-            logging.info(f'Creating Campaign: "{campaign_name}"')
-            params = {
-                Campaign.Field.name: campaign_name,
-                Campaign.Field.objective: 'POST_ENGAGEMENT',
-                Campaign.Field.special_ad_category : 'NONE',
-                Campaign.Field.status: 'ACTIVE',
-            }
-            campaign = self._act.create_campaign(params=params)
-            if campaign is not None: # Need to Check
-                logging.info(f'Campaign creation success: "{campaign_name}"')
-            else:
-                raise Exception('unable to create campaign')
+            logging.info(f'Duplicating Campaign: "{campaign_name}"')
+            cr = template.create_copy(fields=None, params={'deep_copy': True})
+            campaign = Campaign(cr._data['copied_campaign_id'])
+            campaign = campaign.api_get(fields=[Campaign.Field.id, Campaign.Field.name])
+            campaign.api_update(params={Campaign.Field.name: campaign_name})
 
-        # To Create AdSet on Campaign(or check exist)
-        ad_name = self.get_adset_name_from_path(name, path)
-        logging.info(f'Checking AdSet Exist: "{campaign_name}"/"{ad_name}"')
-        adgroups = campaign.get_ad_sets(fields=[
-            AdSet.Field.name,
-            AdSet.Field.id
-        ])
-        ad_set = self.get_adset_by_name(adgroups, ad_name)
-        if ad_set is not None:
-            logging.info(f'AdSet is already exist: "{campaign_name}"/"{ad_name}"')
+        # check campaign is valid
+        if campaign is not None and isinstance(campaign, Campaign):
+            logging.info(f'Campaign Duplicate success: "{campaign_name}"')
         else:
-            logging.info(f'Creating AdSet: "{campaign_name}"/"{ad_name}"')
-            # self._api.init(os.environ['FB_GA_APPID'], os.environ['FB_GA_APPKEY'], os.environ['FB_GA_TOKEN'])
-            FacebookAdsApi.init(os.environ['FB_GA_APPID'], os.environ['FB_GA_APPKEY'], os.environ['FB_GA_TOKEN'])
-            ad_set = AdSet(parent_id=self._act_id)
-            ad_set.update({
-                AdSet.Field.name: ad_name,
-                AdSet.Field.campaign_id: campaign["id"],
-                AdSet.Field.daily_budget: 1000,
-                AdSet.Field.billing_event: AdSet.BillingEvent.impressions,
-                AdSet.Field.optimization_goal: AdSet.OptimizationGoal.reach,
-                AdSet.Field.bid_amount: 2,
-                AdSet.Field.targeting: {
-                    Targeting.Field.geo_locations: {
-                        'countries': ['US'],
-                    },
-                },
-            })
-            ad_set.remote_create(params={'status': 'ACTIVE'})
-            if ad_set is not None: # Need to Check
-                logging.info(f'AdSet creation success: "{campaign_name}"/"{ad_name}"')
-            else:
-                raise Exception('unable to create AdSet')
+            raise Exception('Unable to duplicate campaign')
+
+        adsets = campaign.get_ad_sets()
+        adsett = adsets[0]
 
         # To upload video file to AdSet
         logging.info(f'Uploading video file:"{new_path}"')
@@ -263,37 +239,55 @@ class FacebookUploaderNoWait(UploaderBase):
         video._parent_id = self._act_id
         video[AdVideo.Field.filepath] = new_path
         res = video.remote_create()
-        video_id_for_creative = video.get_id()
-        logging.info(f'Video is created(id):"{video_id_for_creative}"')
+        vid = video.get_id()
+        logging.info(f'Video is created(id):"{vid}"')
 
-        page_id = os.environ.get('PAGE_ID', '100255224975062')  # Todo. Need to check
-        params = {
-            AdCreative.Field.name: 'cractive_' + name,
-            AdCreative.Field.video_id: video_id_for_creative,
-            AdCreative.Field.object_type: 'SPONSORED_VIDEO',
-            AdCreative.Field.object_story_spec:
-            {
-                'page_id': page_id,
-                'link_data':
-                {
-                    # 'image_hash': image_hash,
-                    'link': 'https://ga.luckydayapp.com/',      # Todo. Need to check
-                    'message': ''
-                }
-            }
-        }
-        ad_creative = self._act.create_ad_creative(params=params)
-        logging.info(f'Ad creative(id): ' + ad_creative['id'])
+        video = AdVideo(vid) # Not Need
+        video = video.api_get(fields=[AdVideo.Field.id, AdVideo.Field.title])
+        vname = video[AdVideo.Field.title]
+        vname = vname.replace(".mp4", "")
 
-        params = {
-            Ad.Field.name: name,
-            Ad.Field.campaign_id: campaign['id'],
-            Ad.Field.adset_id: ad_set['id'],
-            Ad.Field.creative: {'creative_id': ad_creative['id']},
-            Ad.Field.status: 'ACTIVE'}
+        # duplicate adset
+        logging.info(f'Duplicating AdSet: "{vname}"')
+        asr = adsett.create_copy(params={'deep_copy': True})
+        adset = AdSet(asr._data['copied_adset_id'])
+        adset.api_update(params={AdSet.Field.name: vname})  # rename adset
 
-        self._act.create_ad(params=params)
-        logging.info(f'Ad creation success: "{campaign_name}"/"{ad_name}"/"{name}"')
+        if adset is not None and isinstance(adset, AdSet):
+            logging.info(f'Duplicate AdSet success: "{vname}"')
+        else:
+            raise Exception('unable to create AdSet')
+
+        # adset ads
+        logging.info(f'Creating AdCreative..')
+        ads = adset.get_ads(fields=[Ad.Field.id, Ad.Field.name, Ad.Field.creative])
+        ad = ads[0]  # should only be one ad
+        ad[Ad.Field.name] = vname
+        ad.api_update(params={Ad.Field.name: vname})  # rename ad
+
+        adc = AdCreative(ad[Ad.Field.creative][AdCreative.Field.id])
+        adc = adc.api_get(fields=[AdCreative.Field.object_story_spec])
+
+        spec = adc[AdCreative.Field.object_story_spec]
+        spec['video_data']['video_id'] = vid
+        spec['video_data']['image_url'] = video.get_thumbnails(fields=[], params={})[0]['uri']
+        spec['video_data'].pop('image_hash')
+
+        new_adc = self._act.create_ad_creative(params={
+            'name': vname,
+            'object_story_spec': spec
+        })
+        if new_adc is not None and isinstance(new_adc, AdCreative):
+            logging.info(f'AdCreative creation success(id): ' + new_adc['id'])
+        else:
+            raise Exception('Unable to create Ad Creactive.')
+
+        # using a new creative to update the ad
+        ad.api_update(params={
+            Ad.Field.creative: {'creative_id': new_adc[AdCreative.Field.id]}
+        })
+
+        logging.info(f'Update AdCreative ID success(id): ' + new_adc[AdCreative.Field.id])
 
         if res is not None and isinstance(res, dict) and 'id' in res:
             id = res['id']
@@ -303,7 +297,7 @@ class FacebookUploaderNoWait(UploaderBase):
             self._uploaded_videos[upl.id] = upl
             return upl
         else:
-            raise Exception('unable to upload video')
+            raise Exception('Unable to upload video')
 
     def upload(self, path: str) -> Optional[UploadedVideo]:
         video = AdVideo(api=self._api)

@@ -18,6 +18,9 @@ from .pattern import is_file_match
 from .source import SourceBase, FileInfoBase
 from .storage import StorageBase
 from .uploader import UploaderBase, TooManyCallsError
+import re
+import json
+
 
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -70,19 +73,14 @@ class Uploader:
     def _handle_file(self, session_id: id, file: FileInfoBase):
         logging.debug(f"_handle_file session_id:{session_id} file.name={file.name} file.path={file.path}")
         is_matched = is_file_match(file.name)
-        if is_matched and self._uploader.should_be_uploaded(file.name):
+        if is_matched:#and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
 
-            # Todo. if the new_file is already exist, it's not need to download again.
-            # <<
-            # input: new_file
-            # output: check it's existence.
-            # >>
             self._source.download_file(file, new_file)
             logging.info(f"Successful download, uploading: {file.name}")
 
-            uploaded = self._uploader.upload_to_campaign(file.name, file.path, file.job_number, new_file)
+            uploaded = self._uploader.upload_with_duplicate(file.name, file.path, file.job_number, new_file)
             if uploaded is not None:
                 #self._storage.create_video(session_id, uploaded.id, file.name, file.path)
                 logging.info(f"Successful upload to Campaign: {file.name}")
@@ -111,6 +109,8 @@ class Uploader:
         return True
 
     def run(self):
+        FacebookAdsApi.init(os.getenv('FB_GA_APPID'), os.getenv('FB_GA_APPKEY'), os.getenv('FB_GA_TOKEN'))
+
         logging.info("Indexing uploader...")
         if not self._do_index():
             logging.warning("index unsuccessful")
@@ -122,7 +122,6 @@ class Uploader:
         logging.info(f'Using {parallelism} threads to upload files')
         pool = ThreadPool(parallelism)
         try:
-
             total_uploaded = []
             logging.info(f'Enumerating files in {self._source._start_folder}')
             all_files = list(self._source.get_files())
