@@ -40,6 +40,7 @@ for vid in videos:
     video = AdVideo(vid) 
     video = video.api_get(fields=[AdVideo.Field.id,AdVideo.Field.title])
     vname = video[AdVideo.Field.title]
+    vname = vname.replace(".mp4", "")
     print(vid)
     print(vname)
 
