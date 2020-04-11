@@ -4,17 +4,11 @@ import time
 from http import HTTPStatus
 from typing import List, Optional, Generator, Tuple
 
-# from facebook_business import FacebookSession, FacebookAdsApi
+from facebook_business import FacebookSession, FacebookAdsApi
 from facebook_business.adobjects.advideo import AdVideo
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.api import FacebookResponse, Cursor
 from facebook_business.exceptions import FacebookRequestError
-from facebook_business.adobjects.campaign import Campaign
-from facebook_business.adobjects.adset import AdSet
-from facebook_business.api import FacebookAdsApi
-from facebook_business.adobjects.targeting import Targeting
-from facebook_business.adobjects.adcreative import AdCreative
-from facebook_business.adobjects.ad import Ad
 
 VIDEO_STATUS_READY = 'ready'
 
