@@ -64,16 +64,20 @@ class Uploader:
 
     def _handle_file(self, session_id: id, file: FileInfoBase):
         logging.debug(f"_handle_file session_id:{session_id} file.name={file.name} file.path={file.path}")
+
+        # Check FileName format
         is_matched = is_file_match(file.name)
-        if is_matched:#and self._uploader.should_be_uploaded(file.name):
+
+        # Upload module. NOT upload if video is already uploaded.
+        if is_matched and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
 
             self._source.download_file(file, new_file)
             logging.info(f"Successful download, uploading: {file.name}")
 
-            uploaded = self._uploader.upload_with_duplicate(file.name, file.path, file.job_number, new_file)
-
+            uploaded = None;
+            uploaded = self._uploader.upload(new_file)
             if uploaded is not None:
                 self._storage.create_video(session_id, uploaded.id, file.name, file.path)
                 logging.info(f"Successful upload: {file.name}")
@@ -86,13 +90,31 @@ class Uploader:
             logging.info(f"Skip: {file.name}")
             return None, None
 
+    def _create_ad(self, session_id: id, file: FileInfoBase):
+        logging.debug(f"_create_ad session_id:{session_id} file.name={file.name} file.path={file.path}")
+        """
+        Create Ad with uploaded video file using Template Campaign
+        It's possible there will be more than one template campaign per ad account.
+        So it should really be 0 to N campaign templates.
+        Template IDs is defined by environment variable 'AD_CAMPAIGN_TEMPLATE_ID',
+        'AD_CAMPAIGN_TEMPLATE_ID' defines 0-N templates by separating with comma ','
+        3 Template definition example; AD_CAMPAIGN_TEMPLATE_ID=("23844416049080002,23844416049080002,23844416049080002")
+        """
+        templates = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', '23844416049080002').split(',')
+        logging.info(f'Template IDs: {templates}')
+
+        for template in templates:
+            res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
+            logging.info(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
+
+        return True
+
     def _do_index(self):
         self._uploader.index()
         return True
 
     def run(self):
         FacebookAdsApi.init(os.getenv('FB_GA_APPID'), os.getenv('FB_GA_APPKEY'), os.getenv('FB_GA_TOKEN'))
-
         logging.info("Indexing uploader...")
         if not self._do_index():
             logging.warning("index unsuccessful")
@@ -128,7 +150,15 @@ class Uploader:
             logging.info(f"{total_uploaded} files uploaded. Waiting for processing completion")
             for id, status in self._uploader.wait_all():
                 self._storage.update_video_status(id, status)
-            logging.info(f"Done")
+            logging.info(f"File Upload is Done")
+
+            # Create Ads with uploaded video by duplicating Template Campaigns(0-N)
+            logging.info(f'Creating ADs with uploaded video files...')
+            self._uploader.read_all_videos()
+            for file in files:
+                self._create_ad(session_id, file)
+            logging.info(f"Create ADS is Done")
+
             self._storage.session_completed(session_id)
         except Exception as e:
             logging.exception(str(e))
