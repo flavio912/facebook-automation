@@ -285,9 +285,6 @@ class FacebookUploaderNoWait(UploaderBase):
                 AdSet.Field.name,
                 AdSet.Field.id
             ])
-            if not len(ad_sets) == 1:
-                logging.info(f'Template AdSet should only be one.')
-                return None;
             adsett = ad_sets[0]
             asr = adsett.create_copy(params={'deep_copy': True})
             ad_set = AdSet(asr._data['copied_adset_id'])
