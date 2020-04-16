@@ -120,7 +120,7 @@ class FacebookUploaderNoWait(UploaderBase):
         self._index = {}  # hash map of existing videos
         self._index_ids = {}  # hash map of existing videos
         self._uploaded_videos = {}
-        self._all_videos = {}
+        self._all_videos = []
 
     def _index_videos(self, videos: List[UploadedVideo]):
         self._index.update(dict(zip(list(map(lambda x: x.name, videos)), videos)))
@@ -229,16 +229,25 @@ class FacebookUploaderNoWait(UploaderBase):
             logging.warning(r.json())
 
     def read_all_videos(self):
+        self._all_videos = []
+        _all_videos = self._act.get_ad_videos(fields=[
+            AdVideo.Field.id,
+            AdVideo.Field.title
+        ])
+        for video in _all_videos:
+            self._all_videos.append(video)
+            """
         self._all_videos = self._act.get_ad_videos(fields=[
             AdVideo.Field.id,
             AdVideo.Field.title
         ])
+        """
         return True
 
     def is_video_uploaded(self, name: str):
         for video in self._all_videos:
             if name == video[AdVideo.Field.title]:
-                return video[AdVideo.Field.id]
+                    return video[AdVideo.Field.id]
         logging.info(f'Video is not uploaded yet:"{name}"')
         return None
         #return name in self._all_videos
@@ -382,6 +391,7 @@ class FacebookUploaderNoWait(UploaderBase):
             logging.info(f'Video created: id={id} res={res}')
             upl = UploadedVideo(id=res['id'])
             self._uploaded_videos[upl.id] = upl
+            os.remove(path);    # delete temp file
             return upl
         else:
             raise Exception('unable to upload video')

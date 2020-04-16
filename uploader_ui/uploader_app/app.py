@@ -10,9 +10,8 @@ from .pattern import is_file_match
 from .source import SourceBase, FileInfoBase
 from .storage import StorageBase
 from .uploader import UploaderBase, TooManyCallsError
-import re
-import json
-
+from facebook_business.adobjects.advideo import AdVideo
+from facebook_business import FacebookSession
 
 from multiprocessing.dummy import Pool as ThreadPool
 
@@ -69,6 +68,10 @@ class Uploader:
         is_matched = is_file_match(file.name)
 
         # Upload module. NOT upload if video is already uploaded.
+        #self._uploader.read_all_videos()
+        #videoID = self._uploader.is_video_uploaded(file.name)
+        #print(videoID)
+        # if is_matched and (self._uploader.should_be_uploaded(file.name) or videoID is None):
         if is_matched and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
@@ -101,11 +104,14 @@ class Uploader:
         3 Template definition example; AD_CAMPAIGN_TEMPLATE_ID=("23844416049080002,23844416049080002,23844416049080002")
         """
         templates = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', '23844416049080002').split(',')
-        logging.info(f'Template IDs: {templates}')
+        logging.info('*****************************************')
+        logging.info(f'Processing Video File:{file.path}')
+        logging.info(f'Available Template IDs: {templates}')
 
         for template in templates:
-            res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
-            logging.info(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
+            if template is not '':
+                res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
+                logging.info(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
 
         return True
 
@@ -114,6 +120,10 @@ class Uploader:
         return True
 
     def run(self):
+        # self._uploader.read_all_videos()
+        # VideoID = self._uploader.is_video_uploaded('Creative-Theme=2_Template=T10-4_Job=606_Version-Opener=1_Copy=1_Creator=7_Gender=none_Age=0_Demo=9.mp4')
+        # print(VideoID)
+
         FacebookAdsApi.init(os.getenv('FB_GA_APPID'), os.getenv('FB_GA_APPKEY'), os.getenv('FB_GA_TOKEN'))
         logging.info("Indexing uploader...")
         if not self._do_index():
@@ -122,9 +132,9 @@ class Uploader:
         logging.info("Indexing done. Started scanning source")
         session_id = self._storage.create_session_id()
 
-        parallelism = int(os.getenv('PARALLELISM', '5'))
+        parallelism = int(os.getenv('PARALLELISM', '1'))
         logging.info(f'Using {parallelism} threads to upload files')
-        pool = ThreadPool(parallelism)
+        #pool = ThreadPool(parallelism)
         try:
             total_uploaded = []
             logging.info(f'Enumerating files in {self._source._start_folder}')
@@ -134,9 +144,14 @@ class Uploader:
             logging.info(f'Found {len(files)} matching files in {self._source._start_folder}')
 
             while True:
-                results = pool.map(lambda file: self._handle_file(session_id, file), files)
-                pool.close()
-                pool.join()
+                results = []
+                for file in files:
+                    upload_file = self._handle_file(session_id, file)
+                    results.append(upload_file)
+
+                # results = pool.map(lambda file: self._handle_file(session_id, file), files)
+                #pool.close()
+                #pool.join()
                 not_uploaded_files = list(filter(lambda x: x is not None, map(lambda x: x[1], results)))
                 uploaded_videos = list(filter(lambda x: x is not None, map(lambda x: x[0], results)))
                 total_uploaded += uploaded_videos
