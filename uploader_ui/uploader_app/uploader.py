@@ -230,7 +230,7 @@ class FacebookUploaderNoWait(UploaderBase):
             for id in self._uploaded_videos:
                 uploaded_video = self._uploaded_videos[id]
                 if name == uploaded_video[AdVideo.Field.title]:
-                    return video[AdVideo.Field.id]
+                    return uploaded_video[AdVideo.Field.id]
         else:
             return video[AdVideo.Field.id]
         logging.info(f'Video is not uploaded yet:"{name}"')
