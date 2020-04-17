@@ -73,7 +73,8 @@ class Uploader:
 
             uploaded = None;
             uploaded = self._uploader.upload(new_file)
-            os.remove(new_file);
+            if os.path.exists(new_file):
+                os.remove(new_file);
             if uploaded is not None:
                 self._storage.create_video(session_id, str(uploaded.id), file.name, file.path)
                 logging.info(f"Successful upload: {file.name}")
@@ -99,11 +100,14 @@ class Uploader:
 
         logging.info(f'Processing:{file.path}')
 
+        temp_file = os.path.join(self._tmp_dir, file.name)
+
+        if os.path.exists(temp_file):
+            os.remove(temp_file);
+
         for template in self.templates:
             if template is not '':
-                temp_file = os.path.join(self._tmp_dir, file.name)
-                os.remove(temp_file);
-                res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.number, template)
+                res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
                 logging.debug(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
 
         return True
@@ -126,6 +130,7 @@ class Uploader:
         #pool = ThreadPool(parallelism)
         try:
             total_uploaded = []
+            upload_names = []
             logging.info(f'Enumerating files in {self._source._start_folder}')
             all_files = list(self._source.get_files())
             logging.info(f'Found {len(all_files)} total files in {self._source._start_folder}')
@@ -137,6 +142,11 @@ class Uploader:
                 for file in files:
                     upload_file = self._handle_file(session_id, file)
                     results.append(upload_file)
+                    if upload_file[0] is not None:
+                        file_with_name = upload_file[0]
+                        file_with_name.name = file.name
+                        upload_names.append(file_with_name)
+
 
                 # results = pool.map(lambda file: self._handle_file(session_id, file), files)
                 #pool.close()
@@ -150,7 +160,7 @@ class Uploader:
                 else:
                     break
 
-            self._uploader.set_uploaded_videos(total_uploaded)
+            self._uploader.set_uploaded_videos(total_uploaded, upload_names)
             logging.info(f"{total_uploaded} files uploaded. Waiting for processing completion")
             for id, status in self._uploader.wait_all():
                 self._storage.update_video_status(id, status)

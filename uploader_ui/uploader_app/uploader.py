@@ -79,7 +79,7 @@ class UploaderBase:
     def create_ad_with_duplicate(self, path: str, name: str, job_num: int, template_id : str):
         raise NotImplementedError
 
-    def set_uploaded_videos(self, files: List[UploadedVideo]):
+    def set_uploaded_videos(self, files: List[UploadedVideo], names):
         raise NotImplementedError
 
     def wait_all(self) -> Generator[Tuple[str,str], None, None]:
@@ -107,6 +107,7 @@ class FacebookUploaderNoWait(UploaderBase):
         self._index = {}  # hash map of existing videos
         self._index_ids = {}  # hash map of existing videos
         self._uploaded_videos = {}
+        self._uploaded_names = {}
         self._campaigns = []
 
     def _index_videos(self, videos: List[UploadedVideo]):
@@ -227,12 +228,10 @@ class FacebookUploaderNoWait(UploaderBase):
     def is_video_uploaded(self, name: str):
         video = self.get_by_name(name)
         if video is None:
-            for id in self._uploaded_videos:
-                uploaded_video = self._uploaded_videos[id]
-                if name == uploaded_video[AdVideo.Field.title]:
-                    return uploaded_video[AdVideo.Field.id]
+            if name in self._uploaded_names:
+                return self._uploaded_names[name].id
         else:
-            return video[AdVideo.Field.id]
+            return video.id
         logging.info(f'Video is not uploaded yet:"{name}"')
 
         return None
@@ -380,8 +379,9 @@ class FacebookUploaderNoWait(UploaderBase):
         else:
             raise Exception('unable to upload video')
 
-    def set_uploaded_videos(self, files: List[UploadedVideo]):
+    def set_uploaded_videos(self, files: List[UploadedVideo], names):
         self._uploaded_videos = dict(zip(map(lambda x: x.id, files), files))
+        self._uploaded_names = dict(zip(map(lambda x: x.name, files), names))
 
     def wait_all(self) -> Generator[Tuple[str,str], None, None]:
         sleepTime = 30
