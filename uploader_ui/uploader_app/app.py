@@ -9,11 +9,7 @@ from facebook_business.exceptions import FacebookBadObjectError, FacebookRequest
 from .pattern import is_file_match
 from .source import SourceBase, FileInfoBase
 from .storage import StorageBase
-from .uploader import UploaderBase, TooManyCallsError
-from facebook_business.adobjects.advideo import AdVideo
-from facebook_business import FacebookSession
-
-from multiprocessing.dummy import Pool as ThreadPool
+from .uploader import UploaderBase
 
 def get_parent_id(self):
     """
@@ -60,18 +56,14 @@ class Uploader:
         self._source = source
         self._uploader = uploader
         self._tmp_dir = tmp_dir
+        self.templates = os.getenv('AD_CAMPAIGN_TEMPLATE_ID').split(',')
 
     def _handle_file(self, session_id: id, file: FileInfoBase):
         logging.debug(f"_handle_file session_id:{session_id} file.name={file.name} file.path={file.path}")
 
         # Check FileName format
         is_matched = is_file_match(file.name)
-
         # Upload module. NOT upload if video is already uploaded.
-        #self._uploader.read_all_videos()
-        #videoID = self._uploader.is_video_uploaded(file.name)
-        #print(videoID)
-        # if is_matched and (self._uploader.should_be_uploaded(file.name) or videoID is None):
         if is_matched and self._uploader.should_be_uploaded(file.name):
             new_file = os.path.join(self._tmp_dir, file.name)
             logging.info(f"Downloading: {file.name}")
@@ -81,8 +73,9 @@ class Uploader:
 
             uploaded = None;
             uploaded = self._uploader.upload(new_file)
+            os.remove(new_file);
             if uploaded is not None:
-                self._storage.create_video(session_id, uploaded.id, file.name, file.path)
+                self._storage.create_video(session_id, str(uploaded.id), file.name, file.path)
                 logging.info(f"Successful upload: {file.name}")
                 return uploaded, None
             else:
@@ -103,15 +96,15 @@ class Uploader:
         'AD_CAMPAIGN_TEMPLATE_ID' defines 0-N templates by separating with comma ','
         3 Template definition example; AD_CAMPAIGN_TEMPLATE_ID=("23844416049080002,23844416049080002,23844416049080002")
         """
-        templates = os.getenv('AD_CAMPAIGN_TEMPLATE_ID', '23844416049080002').split(',')
-        logging.info('*****************************************')
-        logging.info(f'Processing Video File:{file.path}')
-        logging.info(f'Available Template IDs: {templates}')
 
-        for template in templates:
+        logging.info(f'Processing:{file.path}')
+
+        for template in self.templates:
             if template is not '':
-                res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
-                logging.info(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
+                temp_file = os.path.join(self._tmp_dir, file.name)
+                os.remove(temp_file);
+                res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.number, template)
+                logging.debug(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
 
         return True
 
@@ -120,10 +113,6 @@ class Uploader:
         return True
 
     def run(self):
-        # self._uploader.read_all_videos()
-        # VideoID = self._uploader.is_video_uploaded('Creative-Theme=2_Template=T10-4_Job=606_Version-Opener=1_Copy=1_Creator=7_Gender=none_Age=0_Demo=9.mp4')
-        # print(VideoID)
-
         FacebookAdsApi.init(os.getenv('FB_GA_APPID'), os.getenv('FB_GA_APPKEY'), os.getenv('FB_GA_TOKEN'))
         logging.info("Indexing uploader...")
         if not self._do_index():
@@ -169,7 +158,8 @@ class Uploader:
 
             # Create Ads with uploaded video by duplicating Template Campaigns(0-N)
             logging.info(f'Creating ADs with uploaded video files...')
-            self._uploader.read_all_videos()
+            self._uploader.index_campaigns()
+            logging.info(f'Available Template IDs: {self.templates}')
             for file in files:
                 self._create_ad(session_id, file)
             logging.info(f"Create ADS is Done")

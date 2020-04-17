@@ -40,6 +40,9 @@ class UploaderBase:
     def get_by_name(self, video_name: str) -> Optional[UploadedVideo]:
         raise NotImplementedError
 
+    def index_campaigns(self):
+        raise NotImplementedError
+
     def get_campaign_by_name(self, campaigns, name: str):
         raise NotImplementedError
 
@@ -59,15 +62,6 @@ class UploaderBase:
         raise NotImplementedError
 
     def upload(self, path: str) -> Optional[UploadedVideo]:
-        """
-        Upload file by given path and return UploadedVideo
-        :param path:
-        :raise Exception if upload failed
-        :return:
-        """
-        raise NotImplementedError
-
-    def read_all_videos(self):
         raise NotImplementedError
 
     def is_video_uploaded(self, name: str):
@@ -83,13 +77,6 @@ class UploaderBase:
         raise NotImplementedError
 
     def create_ad_with_duplicate(self, path: str, name: str, job_num: int, template_id : str):
-        """
-        Create AD with file by given path to Facebook Campaign
-        :param path:
-        :param name:
-        :param job_num:
-        :return:
-        """
         raise NotImplementedError
 
     def set_uploaded_videos(self, files: List[UploadedVideo]):
@@ -120,7 +107,7 @@ class FacebookUploaderNoWait(UploaderBase):
         self._index = {}  # hash map of existing videos
         self._index_ids = {}  # hash map of existing videos
         self._uploaded_videos = {}
-        self._all_videos = []
+        self._campaigns = []
 
     def _index_videos(self, videos: List[UploadedVideo]):
         self._index.update(dict(zip(list(map(lambda x: x.name, videos)), videos)))
@@ -178,8 +165,17 @@ class FacebookUploaderNoWait(UploaderBase):
             return self._index[video_name]
         return None
 
-    def get_campaign_by_name(self, campaigns, name: str):
+    def index_campaigns(self):
+        campaigns = self._act.get_campaigns(fields=[
+            Campaign.Field.name,
+            Campaign.Field.id
+        ])
+        # _campaigns.update(dict(zip(list(map(lambda c: c["name"], campaigns)), campaigns)))
         for campaign in campaigns:
+            self._campaigns.append(campaign)
+
+    def get_campaign_by_name(self, campaigns, name: str):
+        for campaign in self._campaigns:
             if campaign["name"] == name:
                 return campaign
         return None
@@ -228,54 +224,43 @@ class FacebookUploaderNoWait(UploaderBase):
                 return
             logging.warning(r.json())
 
-    def read_all_videos(self):
-        self._all_videos = []
-        _all_videos = self._act.get_ad_videos(fields=[
-            AdVideo.Field.id,
-            AdVideo.Field.title
-        ])
-        for video in _all_videos:
-            self._all_videos.append(video)
-            """
-        self._all_videos = self._act.get_ad_videos(fields=[
-            AdVideo.Field.id,
-            AdVideo.Field.title
-        ])
-        """
-        return True
-
     def is_video_uploaded(self, name: str):
-        for video in self._all_videos:
-            if name == video[AdVideo.Field.title]:
+        video = self.get_by_name(name)
+        if video is None:
+            for id in self._uploaded_videos:
+                uploaded_video = self._uploaded_videos[id]
+                if name == uploaded_video[AdVideo.Field.title]:
                     return video[AdVideo.Field.id]
+        else:
+            return video[AdVideo.Field.id]
         logging.info(f'Video is not uploaded yet:"{name}"')
+
         return None
-        #return name in self._all_videos
 
     def duplicate_campaign(self, template_id, job_num, job_name):
         template = Campaign(template_id)
         template = template.api_get(fields=[Campaign.Field.name])
         campaign_name = template[Campaign.Field.name] + str(job_num) + "_" + job_name
-        logging.info(f'Checking Campaign existence: "{campaign_name}"')
+        logging.debug(f'Checking Campaign existence: "{campaign_name}"')
         campaigns = self._act.get_campaigns(fields=[
             Campaign.Field.name,
             Campaign.Field.id
         ])
         campaign = self.get_campaign_by_name(campaigns, campaign_name)
         if campaign is not None:
-            logging.info(f'Campaign is already exist: "{campaign_name}"')
+            logging.info(f'Skip Campaign Duplicate: "{campaign_name}"')
         else:
-            logging.info(f'Duplicating Campaign: "{campaign_name}"')
+            logging.info(f'Campaign Duplicating: "{campaign_name}"')
             cr = template.create_copy(fields=None, params={'deep_copy': True})
             campaign = Campaign(cr._data['copied_campaign_id'])
             campaign = campaign.api_get(fields=[Campaign.Field.id, Campaign.Field.name])
             campaign.api_update(params={Campaign.Field.name: campaign_name})
 
-        # check campaign is valid
-        if campaign is not None and isinstance(campaign, Campaign):
-            logging.info(f'Campaign Duplicate success: "{campaign_name}"')
-        else:
-            return None
+            # check campaign is valid
+            if campaign is not None and isinstance(campaign, Campaign):
+                logging.info(f'Campaign Duplicate success: "{campaign_name}"')
+            else:
+                return None
 
         return campaign
 
@@ -284,12 +269,12 @@ class FacebookUploaderNoWait(UploaderBase):
             AdSet.Field.name,
             AdSet.Field.id
         ])
-        logging.info(f'Checking AdSet existence: "{adset_name}"')
+        logging.debug(f'Checking AdSet existence: "{adset_name}"')
         ad_set = self.get_adset_by_name(ad_sets, adset_name)
         if ad_set is not None and isinstance(ad_set, AdSet):
-            logging.info(f'AdSet is already exist: "{adset_name}"')
+            logging.info(f'Skip AdSet Duplicate: "{adset_name}"')
         else:
-            logging.info(f'Duplicate AdSet: "{adset_name}"')
+            logging.info(f'AdSet Duplicating: "{adset_name}"')
             ad_sets = campaign.get_ad_sets(fields=[ # get again
                 AdSet.Field.name,
                 AdSet.Field.id
@@ -300,9 +285,9 @@ class FacebookUploaderNoWait(UploaderBase):
             ad_set.api_update(params={AdSet.Field.name: adset_name})  # rename adset
 
             if ad_set is not None and isinstance(ad_set, AdSet):
-                logging.info(f'Duplicate AdSet success: "{adset_name}"')
+                logging.debug(f'AdSet Duplicate success: "{adset_name}"')
             else:
-                logging.info('Unable to create AdSet: "{adset_name}"')
+                logging.debug('Unable to create AdSet: "{adset_name}"')
                 return None;
 
         return ad_set;
@@ -310,16 +295,16 @@ class FacebookUploaderNoWait(UploaderBase):
     def duplicate_ad(self, ad_set, uploaded_video, video_id, video_name):
         ads = ad_set.get_ads(fields=[Ad.Field.id, Ad.Field.name, Ad.Field.creative])
 
-        logging.info(f'Checking Ad existence: "{video_name}"')
+        logging.debug(f'Checking Ad existence: "{video_name}"')
         ad = self.get_ad_by_name(ads, video_name)
         if ad is not None and isinstance(ad, Ad):
-            logging.info(f'Ad is already exist: "{video_name}"')
+            logging.info(f'Skip Ad: "{video_name}"')
             return True
         else:
-            logging.info(f'Duplicate Ad: "{video_name}"')
+            logging.info(f'Ad Updating: "{video_name}"')
             ads = ad_set.get_ads(fields=[Ad.Field.id, Ad.Field.name, Ad.Field.creative])    # get again
             if not len(ads) == 1:
-                logging.info(f'Template Ad should only be one.')
+                logging.debug(f'Template Ad should only be one.')
                 return None;
             logging.info(f'Creating AdCreative..')
             ad = ads[0]
@@ -339,11 +324,11 @@ class FacebookUploaderNoWait(UploaderBase):
                 'object_story_spec': spec
             })
             if new_adc is not None and isinstance(new_adc, AdCreative):
-                logging.info(f'AdCreative creation success(id): ' + new_adc['id'])
+                logging.info(f'AdCreative create success(id): ' + new_adc['id'])
             else:
                 logging.info('Unable to create Ad Creactive.')
 
-            logging.info(f'Updating AdCreative of Ad..')
+            logging.debug(f'Updating AdCreative of Ad..')
             res = ad.api_update(params={
                 Ad.Field.creative: {'creative_id': new_adc[AdCreative.Field.id]}
             })
@@ -391,7 +376,6 @@ class FacebookUploaderNoWait(UploaderBase):
             logging.info(f'Video created: id={id} res={res}')
             upl = UploadedVideo(id=res['id'])
             self._uploaded_videos[upl.id] = upl
-            os.remove(path);    # delete temp file
             return upl
         else:
             raise Exception('unable to upload video')
