@@ -258,6 +258,7 @@ class FacebookUploaderNoWait(UploaderBase):
             # check campaign is valid
             if campaign is not None and isinstance(campaign, Campaign):
                 logging.info(f'Campaign Duplicate success: "{campaign_name}"')
+                self._campaigns.append(campaign)
             else:
                 return None
 
