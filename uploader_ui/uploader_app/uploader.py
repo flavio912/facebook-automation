@@ -239,7 +239,7 @@ class FacebookUploaderNoWait(UploaderBase):
     def duplicate_campaign(self, template_id, job_num, job_name):
         template = Campaign(template_id)
         template = template.api_get(fields=[Campaign.Field.name])
-        campaign_name = template[Campaign.Field.name] + str(job_num) + "_" + job_name
+        campaign_name = template[Campaign.Field.name] + str(job_num)        # + "_" + job_name
         logging.debug(f'Checking Campaign existence: "{campaign_name}"')
         campaigns = self._act.get_campaigns(fields=[
             Campaign.Field.name,
