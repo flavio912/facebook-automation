@@ -254,7 +254,7 @@ class FacebookUploaderNoWait(UploaderBase):
             campaign = Campaign(cr._data['copied_campaign_id'])
             campaign = campaign.api_get(fields=[Campaign.Field.id, Campaign.Field.name])
             campaign.api_update(params={Campaign.Field.name: campaign_name})
-
+            campaign["name"] = campaign_name
             # check campaign is valid
             if campaign is not None and isinstance(campaign, Campaign):
                 logging.info(f'Campaign Duplicate success: "{campaign_name}"')
