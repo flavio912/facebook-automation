@@ -90,7 +90,7 @@ class DropBoxSource(SourceBase):
         folders = []
         for f in all_files:
             job = get_job_id(f.name)
-            if job is not None and (job>=job_min) and (job<job_max):
+            if job is not None and (job>=job_min) and (job<job_max) and '_NETWORKS' not in f.name.upper():
                 folders.append(Job(job, f))
         logging.info(f'Identified {len(folders)} between {job_min} and {job_max}')
         return folders

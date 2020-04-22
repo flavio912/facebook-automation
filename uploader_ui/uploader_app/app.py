@@ -146,8 +146,6 @@ class Uploader:
                         file_with_name = upload_file[0]
                         file_with_name.name = file.name
                         upload_names.append(file_with_name)
-
-
                 # results = pool.map(lambda file: self._handle_file(session_id, file), files)
                 #pool.close()
                 #pool.join()
