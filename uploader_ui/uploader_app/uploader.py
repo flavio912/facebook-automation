@@ -43,6 +43,9 @@ class UploaderBase:
     def index_campaigns(self):
         raise NotImplementedError
 
+    def index_template_adset_names(self, templates):
+        raise NotImplementedError;
+
     def get_campaign_by_name(self, campaigns, name: str):
         raise NotImplementedError
 
@@ -109,6 +112,8 @@ class FacebookUploaderNoWait(UploaderBase):
         self._uploaded_videos = {}
         self._uploaded_names = {}
         self._campaigns = []
+        self._template_campaign_id = ""
+        self._template_adset_names = {}
 
     def _index_videos(self, videos: List[UploadedVideo]):
         self._index.update(dict(zip(list(map(lambda x: x.name, videos)), videos)))
@@ -174,6 +179,19 @@ class FacebookUploaderNoWait(UploaderBase):
         # _campaigns.update(dict(zip(list(map(lambda c: c["name"], campaigns)), campaigns)))
         for campaign in campaigns:
             self._campaigns.append(campaign)
+
+    def index_template_adset_names(self, templates):
+        names = []
+        for template in templates:
+            if template != '':
+                template_campaign = Campaign(template)
+                template_campaign = template_campaign.api_get(fields=[Campaign.Field.name])
+                ad_sets = template_campaign.get_ad_sets(fields=[
+                    AdSet.Field.name,
+                    AdSet.Field.id
+                ])
+                names.append({'campaign_id': template_campaign['id'], 'name': ad_sets[0]['name']});
+        self._template_adset_names = dict(zip(map(lambda x: x['campaign_id'], names), names))
 
     def get_campaign_by_name(self, campaigns, name: str):
         for campaign in self._campaigns:
@@ -279,8 +297,17 @@ class FacebookUploaderNoWait(UploaderBase):
                 AdSet.Field.name,
                 AdSet.Field.id
             ])
+
             adsett = ad_sets[0]
+            is_delete_adset = False
+            if adsett['name'] == self._template_adset_names[self._template_campaign_id]['name']:
+                is_delete_adset = True
+
             asr = adsett.create_copy(params={'deep_copy': True, 'campaign_id': campaign['id']})
+            if is_delete_adset:
+                res = adsett.api_delete()
+                logging.info(f'Deleting Template AdSet: {res}')
+
             ad_set = AdSet(asr._data['copied_adset_id'])
             ad_set.api_update(params={AdSet.Field.name: adset_name})  # rename adset
 
@@ -348,6 +375,7 @@ class FacebookUploaderNoWait(UploaderBase):
         video = video.api_get(fields=[AdVideo.Field.id, AdVideo.Field.title])
         v_name = video[AdVideo.Field.title]
         v_name = v_name.replace(".mp4", "")
+        self._template_campaign_id = template_id
 
         # Duplicate Campaign
         campaign = self.duplicate_campaign(template_id, job_num, self.get_adset_name_from_path(name, path))

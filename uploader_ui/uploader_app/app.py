@@ -169,6 +169,7 @@ class Uploader:
             # Create Ads with uploaded video by duplicating Template Campaigns(0-N)
             logging.info(f'Creating ADs with uploaded video files...')
             self._uploader.index_campaigns()
+            self._uploader.index_template_adset_names(self.templates)
             logging.info(f'Available Template IDs: {self.templates}')
             for file in files:
                 self._create_ad(session_id, file)
