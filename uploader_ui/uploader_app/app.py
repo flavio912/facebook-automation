@@ -106,7 +106,7 @@ class Uploader:
             os.remove(temp_file);
 
         for template in self.templates:
-            if template is not '':
+            if template != '':
                 res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
                 logging.debug(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
 

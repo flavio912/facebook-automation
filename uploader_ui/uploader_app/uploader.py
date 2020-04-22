@@ -280,7 +280,7 @@ class FacebookUploaderNoWait(UploaderBase):
                 AdSet.Field.id
             ])
             adsett = ad_sets[0]
-            asr = adsett.create_copy(params={'deep_copy': True})
+            asr = adsett.create_copy(params={'deep_copy': True, 'campaign_id': campaign['id']})
             ad_set = AdSet(asr._data['copied_adset_id'])
             ad_set.api_update(params={AdSet.Field.name: adset_name})  # rename adset
 
