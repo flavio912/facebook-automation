@@ -97,7 +97,6 @@ class Uploader:
         'AD_CAMPAIGN_TEMPLATE_ID' defines 0-N templates by separating with comma ','
         3 Template definition example; AD_CAMPAIGN_TEMPLATE_ID=("23844416049080002,23844416049080002,23844416049080002")
         """
-
         logging.info(f'Processing:{file.path}')
 
         temp_file = os.path.join(self._tmp_dir, file.name)
@@ -107,8 +106,12 @@ class Uploader:
 
         for template in self.templates:
             if template != '':
+                logging.info(f'Creating ad with template: job_num:{file.job_number}, template:{template}')
                 res = self._uploader.create_ad_with_duplicate(file.path, file.name, file.job_number, template)
-                logging.debug(f'Create Ad with video: {file.path}, Template id:{template} -> {res}')
+                if res:
+                    logging.info(f'Success')
+                else:
+                    logging.warning(f'Failed')
 
         return True
 
@@ -124,10 +127,6 @@ class Uploader:
             return
         logging.info("Indexing done. Started scanning source")
         session_id = self._storage.create_session_id()
-
-        parallelism = int(os.getenv('PARALLELISM', '1'))
-        logging.info(f'Using {parallelism} threads to upload files')
-        #pool = ThreadPool(parallelism)
         try:
             total_uploaded = []
             upload_names = []
@@ -146,9 +145,7 @@ class Uploader:
                         file_with_name = upload_file[0]
                         file_with_name.name = file.name
                         upload_names.append(file_with_name)
-                # results = pool.map(lambda file: self._handle_file(session_id, file), files)
-                #pool.close()
-                #pool.join()
+
                 not_uploaded_files = list(filter(lambda x: x is not None, map(lambda x: x[1], results)))
                 uploaded_videos = list(filter(lambda x: x is not None, map(lambda x: x[0], results)))
                 total_uploaded += uploaded_videos
@@ -166,12 +163,11 @@ class Uploader:
 
             # Create Ads with uploaded video by duplicating Template Campaigns(0-N)
             logging.info(f'Creating ADs with uploaded video files...')
-            self._uploader.index_campaigns()
             self._uploader.index_template_adset_names(self.templates)
             logging.info(f'Available Template IDs: {self.templates}')
             for file in files:
                 self._create_ad(session_id, file)
-            logging.info(f"Create ADS is Done")
+            logging.info(f"Create ADs is Done")
 
             self._storage.session_completed(session_id)
         except Exception as e:
