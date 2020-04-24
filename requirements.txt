@@ -4,7 +4,7 @@ chardet==3.0.4
 curlify==2.2.1
 Django==3.0
 dropbox==9.4.0
-facebook-business==5.0.2
+facebook-business==6.0.3
 idna==2.8
 pytz==2019.3
 requests==2.22.0
